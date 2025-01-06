@@ -85,15 +85,15 @@ impl Broadcaster {
             .send(sse::Data::new("my data").event("chat_msg").into())
             .await;
 
-        // self.inner.lock().clients.push(tx);
+        self.inner.lock().clients.push(tx);
         // let tx_copy = tx.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(2)).await;
-            tx.send(sse::Data::new("my data222").event("chat_msg").into())
-                .await;
+        // tokio::spawn(async move {
+        //     tokio::time::sleep(Duration::from_secs(2)).await;
+        //     tx.send(sse::Data::new("my data222").event("chat_msg").into())
+        //         .await;
 
             //     tx.send(sse::Data::new("my data222").event("chat_msg").into()).await;
-        });
+        // });
 
         sse::Sse::from_infallible_receiver(rx)
         // let (tx, rx) = mpsc::channel(10);
