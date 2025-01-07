@@ -1,12 +1,63 @@
-use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
-use jsonwebtoken::{encode, EncodingKey, Header};
+use std::{future::Future, pin::Pin};
+
+use actix_web::{get, web::{self, Payload}, FromRequest, HttpRequest, HttpResponse, Responder, error::{ErrorUnauthorized, Error}};
+use jsonwebtoken::{encode,decode, DecodingKey, EncodingKey, Header, Validation};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Claims {
-    sub: String, // Subject (typically the user ID or email)
-                 // Add other claims as needed (e.g., exp, iat, etc.)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Claims {
+    pub sub: String, // Subject (typically the user ID or email)
+    pub exp: usize, // 过期时间
+                     // Add other claims as needed (e.g., exp, iat, etc.)
+}
+
+impl FromRequest for Claims {
+    type Error = Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;
+
+    fn from_request(req: &HttpRequest, _: &mut actix_web::dev::Payload) -> Self::Future {
+        let req = req.clone();
+        Box::pin(async move {
+            let token = req
+                .headers()
+                .get("Authorization")
+                .and_then(|auth_header| auth_header.to_str().ok())
+                .and_then(|auth_str| {
+                    if auth_str.starts_with("Bearer ") {
+                        Some(auth_str[7..].to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| {
+                    ErrorUnauthorized(json!({
+                        "error": "Missing or invalid authorization header"
+                    }))
+                })?;
+
+            // let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key".to_string());
+            let secret = "your-secret-key".to_string();
+            println!("secret: {}", secret);
+            println!("token: {}", token);
+
+            let token_data: jsonwebtoken::TokenData<Claims> = decode::<Claims>(
+                &token,
+                &DecodingKey::from_secret(secret.as_bytes()),
+                &Validation::default()
+            ).map_err(|_| {
+                ErrorUnauthorized(json!({
+                    "error": "Invalid token"
+                }))
+            })?;
+
+            Ok(Claims {
+                sub: token_data.claims.sub.clone(),
+                exp: token_data.claims.exp,
+            })
+        })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,11 +121,16 @@ async fn exchange_code_for_token(code: &str) -> Result<AuthRes, reqwest::Error> 
 
     let my_claims = Claims {
         sub: primary_email.unwrap().email.clone(),
+        exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize
     };
 
     let key = EncodingKey::from_secret("your-secret-key".as_ref()); // Replace with your secret key
 
     let token = encode(&Header::default(), &my_claims, &key).unwrap();
+
+
+    let res  = decode::<Claims>(&token, &DecodingKey::from_secret("your-secret-key".as_ref()), &Validation::default()).unwrap();
+    println!("res: {:?}", res);
 
     // println!("JWT: {}", token);
     // println!("{:?}", user_email_res.text().await);

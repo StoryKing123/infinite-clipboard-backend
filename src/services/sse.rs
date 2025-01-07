@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::broadcast::Broadcaster;
 
+use super::auth::Claims;
+
 #[derive(Deserialize)]
 struct RoomQuery {
     room_id: String,
@@ -25,17 +27,21 @@ struct BroadcastMessage {
 #[get("/events/connect")]
 async fn connect_to_room(
     query: web::Query<RoomQuery>,
+    // user:Claims,
     broadcaster: web::Data<Broadcaster>
 ) -> impl Responder {
+    // println!("user: {:?}", user.sub);
     broadcaster.new_client(query.room_id.clone(), query.client_id.clone()).await
 }
 
 #[post("/events/broadcast/{room_id}/{client_id}")]
 async fn broadcast_to_room(
     path: web::Path<(String, String)>,
+    user:Claims,
     message: web::Json<BroadcastMessage>,
     broadcaster: web::Data<Broadcaster>,
 ) -> impl Responder {
+    // println!("user: {:?}", user.sub);
     let (room_id, client_id) = path.into_inner();
     broadcaster.broadcast_to_room(&room_id, &client_id, &message.message).await;
     HttpResponse::Ok().json(serde_json::json!({
