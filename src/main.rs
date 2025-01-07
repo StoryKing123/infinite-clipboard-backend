@@ -1,4 +1,3 @@
-
 mod services;
 use std::{io, sync::Arc};
 
@@ -43,12 +42,12 @@ async fn main() -> std::io::Result<()> {
             )
             .service(greet)
             .service(services::auth::github_callback)
-            .service(services::sse::event_stream)
-            .service(services::sse::broadcast_msg)
+            .service(services::sse::connect_to_room)
+            .service(services::sse::broadcast_to_room)
             .service(services::sse::index)
         // .service(connect)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("127.0.0.1", 3000))?
     .workers(2)
     .run()
     .await
