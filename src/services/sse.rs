@@ -28,27 +28,43 @@ struct BroadcastMessage {
 async fn connect_to_room(
     query: web::Query<RoomQuery>,
     // user:Claims,
-    broadcaster: web::Data<Broadcaster>
+    broadcaster: web::Data<Broadcaster>,
 ) -> impl Responder {
     // println!("user: {:?}", user.sub);
-    broadcaster.new_client(query.room_id.clone(), query.client_id.clone()).await
+    broadcaster
+        .new_client(query.room_id.clone(), query.client_id.clone())
+        .await
 }
 
 #[post("/events/broadcast/{room_id}/{client_id}")]
 async fn broadcast_to_room(
     path: web::Path<(String, String)>,
-    user:Claims,
+    // user:Claims,
     message: web::Json<BroadcastMessage>,
     broadcaster: web::Data<Broadcaster>,
 ) -> impl Responder {
     // println!("user: {:?}", user.sub);
     let (room_id, client_id) = path.into_inner();
-    broadcaster.broadcast_to_room(&room_id, &client_id, &message.message).await;
+    broadcaster
+        .broadcast_to_room(&room_id, &client_id, &message.message)
+        .await;
     HttpResponse::Ok().json(serde_json::json!({
         "status": "sent",
         "room": room_id,
         "from": client_id
     }))
+}
+
+#[get("/connect")]
+async fn connect(
+    query: web::Query<RoomQuery>,
+    user:Claims,
+    broadcaster: web::Data<Broadcaster>,
+) -> impl Responder {
+    // HttpResponse::Ok().body("connected")
+    broadcaster
+        .new_client(query.room_id.clone(), query.client_id.clone())
+        .await
 }
 
 #[get("/")]
@@ -64,4 +80,3 @@ async fn index() -> impl Responder {
 //     broadcaster.broadcast(&msg).await;
 //     HttpResponse::Ok().body("msg sent")
 // }
-

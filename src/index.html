@@ -17,7 +17,7 @@
     <script>
         let root = document.getElementById("root");
         // let events = new EventSource("/events");
-        let events = new EventSource("/events/connect?room_id=room1&client_id=client1");
+        let events = new EventSource("/events/connect?room_id=room1&client_id=client00");
         events.onmessage = (event) => {
             let data = document.createElement("p");
             let time = new Date().toLocaleTimeString();

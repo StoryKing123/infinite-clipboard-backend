@@ -106,7 +106,11 @@ impl Broadcaster {
         println!("clients: {:?}", clients.len());
         let send_futures = clients
             .iter()
-            .map(|client| client.send(sse::Data::new(msg).event("message").into()));
+            .map(|client| {
+                println!("sending message to client: {:?}", client);
+                let msg = sse::Data::new(msg).event("message").into();
+                client.send(msg)
+            });
 
         let _ = future::join_all(send_futures).await;
     }
