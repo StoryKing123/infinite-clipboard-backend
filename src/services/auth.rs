@@ -177,9 +177,10 @@ pub async fn github_callback(query: web::Query<AuthCode>, _req: HttpRequest) -> 
     // 在实际应用中，应该从 Cookie 或者 Session 中获取
     let original_url = match os {
         "Windows" => "http://infiniteclipboard.local/callback",
-        "macOS" => "",
+        "macOS" => "infiniteclipboard://localhost/callback",
         _ => "",
     };
+    println!("original_url: {}", original_url);
 
     // 构建带有 token 的重定向 url
     let redirect_url = Url::parse(original_url)

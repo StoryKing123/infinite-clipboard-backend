@@ -23,8 +23,9 @@ async fn greet(name: web::Path<String>) -> impl Responder {
 
 #[actix_web::main] // or #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| {
-        let data = Broadcaster::create();
+let data = Broadcaster::create();
+
+    HttpServer::new(move || {
 
         App::new()
             .app_data(web::Data::from(Arc::clone(&data)))
@@ -45,10 +46,11 @@ async fn main() -> std::io::Result<()> {
             .service(services::sse::connect_to_room)
             .service(services::sse::broadcast_to_room)
             .service(services::sse::index)
+            .service(services::sse::update_connection)
         // .service(connect)
     })
     .bind(("127.0.0.1", 3000))?
-    .workers(2)
+    .workers(2) 
     .run()
     .await
 }

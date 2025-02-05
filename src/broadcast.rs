@@ -7,17 +7,18 @@ use actix_web_lab::{
 };
 use futures_util::future;
 use parking_lot::Mutex;
+use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 pub struct Broadcaster {
-    inner: Mutex<BroadcasterInner>,
+    pub inner: Mutex<BroadcasterInner>,
 }
 
 #[derive(Debug, Clone, Default)]
-struct BroadcasterInner {
+pub struct BroadcasterInner {
     // room_id -> (client_id -> sender)
-    rooms: HashMap<String, HashMap<String, mpsc::Sender<sse::Event>>>,
+    pub rooms: HashMap<String, HashMap<String, mpsc::Sender<sse::Event>>>,
 }
 
 impl Broadcaster {
@@ -46,6 +47,11 @@ impl Broadcaster {
         let mut inner = self.inner.lock();
         let mut rooms_to_remove = Vec::new();
 
+        // println!("before remove:{:?}",inner.rooms.len());
+        // for room in inner.rooms.iter(){
+        //     println!("{:?}",room);
+        // }
+
         for (room_id, clients) in inner.rooms.iter_mut() {
             let mut active_clients = HashMap::new();
 
@@ -70,34 +76,60 @@ impl Broadcaster {
         for room_id in rooms_to_remove {
             inner.rooms.remove(&room_id);
         }
+        // println!("after remove:{:?}",inner.rooms.len());
+        // for room in inner.rooms.iter(){
+        //     println!("{:?}",room);
+        // }
     }
 
     pub async fn new_client(&self, room_id: String, client_id: String) -> Sse<InfallibleStream<ReceiverStream<sse::Event>>> {
-        let (tx, rx) = mpsc::channel(10);
+        let (tx, rx) = mpsc::channel(100);
 
         let mut inner = self.inner.lock();
         let room = inner.rooms.entry(room_id.clone()).or_default();
         room.insert(client_id.clone(), tx.clone());
-
         // Send initial connection message
+        let clients: Vec<_> = room.keys().map(|client_id| json!({"clientID": client_id})).collect();
+        println!("clients: {:?}", clients);
+
+        println!("new client");
+        println!("rooms size:{:?}",inner.rooms.len());
+        println!("client size:{:?}",clients.len());
         let _ = tx
-            .send(sse::Data::new(format!("Connected to room: {}", room_id))
+            .send(sse::Data::new(json!({"devices":clients}).to_string())
                 .event("connection")
                 .into())
             .await;
 
+
+
         Sse::from_infallible_receiver(rx)
     }
 
-    pub async fn broadcast_to_room(&self, room_id: &str, from_client_id: &str, msg: &str) {
+    // async fn remove_client(&self, room_id: &str, client_id: &str) {
+    //     let mut inner = self.inner.lock();
+    //     if let Some(room) = inner.rooms.get_mut(room_id) {
+    //         room.remove(client_id);
+    //         if room.is_empty() {
+    //             inner.rooms.remove(room_id);
+    //         }
+    //     }
+    // }
+
+    pub async fn broadcast_to_room(&self, room_id: &str, from_client_id: &str, msg: &str, exclude_self: bool) {
         let clients = {
             let inner = self.inner.lock();
-            println!("rooms: {:?}", inner.rooms.len());
             if let Some(room) = inner.rooms.get(room_id) {
-                room.iter()
-                    .filter(|(id, _)| *id != from_client_id)
+                if exclude_self {
+                    room.iter()
+                        .filter(|(id, _)| *id != from_client_id)
+                        .map(|(_, client)| client.clone())
+                        .collect::<Vec<_>>()
+                } else {
+                    room.iter()
                     .map(|(_, client)| client.clone())
                     .collect::<Vec<_>>()
+                }
             } else {
                 return;
             }
