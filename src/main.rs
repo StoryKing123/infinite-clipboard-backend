@@ -31,14 +31,15 @@ let data = Broadcaster::create();
             .app_data(web::Data::from(Arc::clone(&data)))
             .wrap(
                 Cors::default()
-                    .allowed_origin("https://www.rust-lang.org")
                     .allowed_origin_fn(|origin, _req_head| {
                         // origin.as_bytes().ends_with(b".rust-lang.org")
                         true
                     })
-                    .allowed_methods(vec!["GET", "POST"])
-                    .allowed_headers(vec![http::header::AUTHORIZATION, http::header::ACCEPT])
-                    .allowed_header(http::header::CONTENT_TYPE)
+                    .allow_any_header()
+                    .allow_any_method()
+                    // .allowed_methods(vec!["GET", "POST"])
+                    // .allowed_headers(vec![http::header::AUTHORIZATION, http::header::ACCEPT])
+                    // .allowed_header(http::header::CONTENT_TYPE)
                     .max_age(3600),
             )
             .service(greet)
@@ -49,7 +50,7 @@ let data = Broadcaster::create();
             .service(services::sse::update_connection)
         // .service(connect)
     })
-    .bind(("127.0.0.1", 3000))?
+    .bind(("0.0.0.0", 3000))?
     .workers(2) 
     .run()
     .await
