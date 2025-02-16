@@ -8,7 +8,7 @@ use actix_web_lab::extract::Path;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio::time;
 
 use crate::broadcast::Broadcaster;
@@ -21,9 +21,13 @@ struct RoomQuery {
     client_id: String,
 }
 
+#[derive(Serialize,Deserialize,Debug)]
+struct MessageContent {
+}
+
 #[derive(Deserialize)]
 struct BroadcastMessage {
-    message: String,
+    message: Value,
 }
 
 #[get("/events/connect")]
