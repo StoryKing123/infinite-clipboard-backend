@@ -56,7 +56,7 @@ async fn broadcast_to_room(
         .broadcast_to_room(
             &room_id,
             &client_id,
-            json!({"action":"receive_text","message":&message.message})
+            json!({"action":"receive_message","message":&message.message})
                 .to_string()
                 .as_str(),
             true,
