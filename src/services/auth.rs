@@ -1,10 +1,13 @@
-use std::{future::Future, pin::Pin};
+use std::{future::Future, pin::Pin, time::{SystemTime, UNIX_EPOCH}};
 
-use actix_web::{get, web::{self, Payload}, FromRequest, HttpRequest, HttpResponse, Responder, error::{ErrorUnauthorized, Error}};
+use actix_web::{error::{Error, ErrorUnauthorized}, get, post, web::{self, Payload}, FromRequest, HttpRequest, HttpResponse, Responder};
 use jsonwebtoken::{encode,decode, DecodingKey, EncodingKey, Header, Validation};
+use rand::Rng;
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
@@ -195,3 +198,204 @@ pub async fn github_callback(query: web::Query<AuthCode>, _req: HttpRequest) -> 
         .append_header(("Location", redirect_url.to_string()))
         .finish()
 }
+
+
+
+async fn send_verification_code(email: &str, code: &str) {
+    println!("Send code {} to {}", code, email);
+}
+// 请求参数结构
+#[derive(Deserialize)]
+struct LoginRequest {
+    email: String,
+    code: String,
+}
+
+
+#[derive(Deserialize)]
+struct SendCodeRequest {
+    email: String,
+}
+
+
+// 生成6位数字验证码
+fn generate_code() -> String {
+    rand::rng()
+        .random_range(100000..999999)
+        .to_string()
+}
+
+// 获取当前时间戳（秒）
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+
+// 处理登录请求
+#[post("/login")]
+pub async fn login_handler(
+    req: web::Json<LoginRequest>,
+    data: web::Data<AppState>,
+) -> impl Responder {
+    let email = req.email.clone();
+    let code = req.code.clone();
+
+    // 从内存中获取验证码
+    let stored = data.codes.read().unwrap().get(&email).cloned();
+    
+    match stored {
+        Some((stored_code, timestamp)) => {
+            // 检查验证码有效期（5分钟）
+            if current_timestamp() - timestamp > 300 {
+                data.codes.write().unwrap().remove(&email);
+                return HttpResponse::Unauthorized().body("Verification code expired");
+            }
+
+            if stored_code == code {
+                // 登录成功，清除验证码
+                data.codes.write().unwrap().remove(&email);
+
+
+                let my_claims = Claims {
+                    sub: email.clone(),
+                    exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize
+                };
+            
+                let key = EncodingKey::from_secret("your-secret-key".as_ref()); // Replace with your secret key
+            
+                let token = encode(&Header::default(), &my_claims, &key).unwrap();
+
+                HttpResponse::Ok().body(format!( "Login successful,{}",token))
+            } else {
+                HttpResponse::Unauthorized().body("Invalid verification code")
+            }
+        }
+        None => HttpResponse::NotFound().body("No verification code found for this email"),
+    }
+}
+// 处理发送验证码请求
+#[post("/send_code")]
+pub async  fn send_code_handler(body: web::Json<SendCodeRequest>, data: web::Data<AppState>) -> impl Responder {
+    let email = body.email.clone();
+    
+    // 简单验证邮箱格式
+    if !email.contains('@') {
+        return HttpResponse::BadRequest().body("Invalid email format");
+    }
+
+    let code = generate_code();
+    let timestamp = current_timestamp();
+    
+    // 存储验证码
+    data.codes
+        .write()
+        .unwrap()
+        .insert(email.clone(), (code.clone(), timestamp));
+
+    // 模拟发送邮件
+    send_verification_code(&email, &code).await;
+
+    HttpResponse::Ok().body("Verification code sent")
+}
+
+// 处理Auth0 OAuth2.0回调，通过code获取token
+#[post("/auth/callback")]
+pub async fn auth0_callback(
+    body: web::Json<Auth0CodeRequest>
+    // client: web::Data<Client>,
+) -> impl Responder {
+    let code = &body.code;
+
+    // Auth0特定的请求参数
+    let params = [
+        ("client_id", "iYJHTznuBHb33JBGxjTbNKG8pMiJCqaj"),
+        ("client_secret", "MNTULJcTadfwAgLtBX6I1n4311VdS0eSkOoGGxVPeEVActQtNlqTff8dyKXBR7o0"),
+        ("code", code),
+        ("grant_type", "authorization_code"),
+        ("redirect_uri", "http://localhost:1420")
+        // ("audience", "your_auth0_api_identifier"),  // Auth0特有的audience参数
+    ];
+
+    // 发送请求到Auth0的token endpoint
+    let client = reqwest::Client::new();
+    let request = client
+        .post("https://dev-gc80uo0lkw38p6fm.us.auth0.com/oauth/token")
+        .form(&params);
+
+    match request.send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<Auth0TokenResponse>().await {
+                    Ok(token_response) => {
+                        // 使用access_token获取用户信息
+                        let client = reqwest::Client::new();
+                        let user_info = client
+                            .get("https://dev-gc80uo0lkw38p6fm.us.auth0.com/userinfo")
+                            .bearer_auth(&token_response.access_token)
+                            .send()
+                            .await;
+
+                        match user_info {
+                            Ok(user_response) => {
+                                if user_response.status().is_success() {
+                                    match user_response.json::<serde_json::Value>().await {
+                                        Ok(user_data) => {
+                                            // 获取email并添加到响应中
+                                            let email = user_data["email"].as_str().unwrap_or("");
+                                            let mut response = token_response;
+                                            response.email = Some(email.to_string());
+                                            HttpResponse::Ok().json(response)
+                                        }
+                                        Err(_) => HttpResponse::InternalServerError().body("Failed to parse user info")
+                                    }
+                                } else {
+                                    HttpResponse::Unauthorized().body("Failed to get user info")
+                                }
+                            }
+                            Err(_) => HttpResponse::InternalServerError().body("Failed to connect to Auth0 userinfo endpoint")
+                        }
+                    }
+                    Err(_) => HttpResponse::InternalServerError().body("Failed to parse token response"),
+                }
+            } else {
+                // 从Auth0获取详细的错误信息
+                let error_msg = match response.json::<Auth0ErrorResponse>().await {
+                    Ok(err) => err.error_description.unwrap_or("Unknown error".to_string()),
+                    Err(_) => "Failed to parse error response".to_string(),
+                };
+                HttpResponse::Unauthorized().body(error_msg)
+            }
+        }
+        Err(_) => HttpResponse::InternalServerError().body("Failed to connect to Auth0 server"),
+    }
+}
+
+// Auth0 code请求结构体
+#[derive(Deserialize)]
+struct Auth0CodeRequest {
+    code: String,
+}
+
+// Auth0 token响应结构体
+#[derive(Serialize, Deserialize)]
+struct Auth0TokenResponse {
+    access_token: String,
+    id_token: String,  // Auth0特有的id_token
+    token_type: String,
+    expires_in: u64,
+    refresh_token: Option<String>,
+    email: Option<String>,
+    scope: String,
+}
+
+// Auth0错误响应结构体
+#[derive(Serialize, Deserialize)]
+struct Auth0ErrorResponse {
+    error: String,
+    error_description: Option<String>,
+}
+
+
