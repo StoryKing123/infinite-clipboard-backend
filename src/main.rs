@@ -50,7 +50,6 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::from(Arc::clone(&data)))
-            // .app_data(Arc::clone(&app_state))
             .app_data(web::Data::from(Arc::clone(&app_state)))
             .wrap(
                 Cors::default()
@@ -71,9 +70,8 @@ async fn main() -> std::io::Result<()> {
             .service(services::sse::broadcast_to_room)
             .service(services::sse::index)
             .service(services::sse::update_connection)
-            .service(services::auth::login_handler)
-            .service(services::auth::send_code_handler)
             .service(services::auth::auth0_callback)
+            .service(services::auth::validate_token)
         // .service(connect)
     })
     .bind(("0.0.0.0", 3000))?

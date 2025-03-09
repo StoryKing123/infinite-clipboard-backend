@@ -1,7 +1,7 @@
 use std::{future::Future, pin::Pin, time::{SystemTime, UNIX_EPOCH}};
 
 use actix_web::{error::{Error, ErrorUnauthorized}, get, post, web::{self, Payload}, FromRequest, HttpRequest, HttpResponse, Responder};
-use jsonwebtoken::{encode,decode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use rand::Rng;
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,7 @@ impl FromRequest for Claims {
                 })?;
 
             // let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key".to_string());
-            let secret = "your-secret-key".to_string();
+            let secret = "secret".to_string();
             println!("secret: {}", secret);
             println!("token: {}", token);
 
@@ -234,72 +234,72 @@ fn current_timestamp() -> u64 {
 }
 
 
-// 处理登录请求
-#[post("/login")]
-pub async fn login_handler(
-    req: web::Json<LoginRequest>,
-    data: web::Data<AppState>,
-) -> impl Responder {
-    let email = req.email.clone();
-    let code = req.code.clone();
-
-    // 从内存中获取验证码
-    let stored = data.codes.read().unwrap().get(&email).cloned();
-    
-    match stored {
-        Some((stored_code, timestamp)) => {
-            // 检查验证码有效期（5分钟）
-            if current_timestamp() - timestamp > 300 {
-                data.codes.write().unwrap().remove(&email);
-                return HttpResponse::Unauthorized().body("Verification code expired");
-            }
-
-            if stored_code == code {
-                // 登录成功，清除验证码
-                data.codes.write().unwrap().remove(&email);
 
 
-                let my_claims = Claims {
-                    sub: email.clone(),
-                    exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize
-                };
-            
-                let key = EncodingKey::from_secret("your-secret-key".as_ref()); // Replace with your secret key
-            
-                let token = encode(&Header::default(), &my_claims, &key).unwrap();
 
-                HttpResponse::Ok().body(format!( "Login successful,{}",token))
-            } else {
-                HttpResponse::Unauthorized().body("Invalid verification code")
-            }
+
+#[derive(Deserialize)]
+struct TokenQuery {
+    token: String,
+}
+
+
+#[get("/validate")]
+async fn validate_token(
+    // auth: BearerAuth,
+    query: web::Query<TokenQuery>
+    // data: web::Data<AppState>,
+) -> Result<impl Responder, actix_web::Error> {
+    // let token = &query.token;
+    let token = "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIiwiaXNzIjoiaHR0cHM6Ly9kZXYtZ2M4MHVvMGxrdzM4cDZmbS51cy5hdXRoMC5jb20vIn0..7OKokBCxPVBtf6Ae.QT6C03xqTdP3PacU-gRTQT12S4Mc66r2I-3fdkAagNXX4yi0ptvC4uFs-5ezyCwVN_NFTvSjlOgiO9TH9m0YF41DDfzXsNxxjsOPtpmSuyyO3LQ2FpTE2u_VE6wxaNIZoktF5vd5lW5zN7sqXFlzUDjHusWBXvn3yBMZLLUsNqg4vTa2lVSl1CWuncIJJ1Z4daPHVhKKNT2D3kRXn3X8xC5v49qltFUANx42wSwofTXQT1oKhXctdYgJleIHc94P0FB42At5xINf4b6xRInAo55cKTOypS1q8DUVCJd1Dq3oF1ssoWrRIEhogn7OXROCbBV8YOFhkFv-faU_gYMyJ4HX.8LncFw0drskkyTKB1WTCkA";
+    // 获取 Auth0 的公钥 (通常从 JWKS 端点动态获取，这里简化为硬编码密钥)
+    let auth0_domain = "dev-gc80uo0lkw38p6fm.us.auth0.com";
+    let jwks_url = format!("https://{}/.well-known/jwks.json", auth0_domain);
+    // 在实际生产中，应使用 reqwest 获取 JWKS 并解析公钥
+    let secret = "-----BEGIN CERTIFICATE-----
+MIIDHTCCAgWgAwIBAgIJZveKVs905Ct6MA0GCSqGSIb3DQEBCwUAMCwxKjAoBgNV
+BAMTIWRldi1nYzgwdW8wbGt3MzhwNmZtLnVzLmF1dGgwLmNvbTAeFw0yNTAzMDIx
+NTI2MDNaFw0zODExMDkxNTI2MDNaMCwxKjAoBgNVBAMTIWRldi1nYzgwdW8wbGt3
+MzhwNmZtLnVzLmF1dGgwLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoC
+ggEBALPbYO821nml/oJHMfEziMfl33XfL4a4fcBqIjCPVtkWJDIseYraI+/UXBXR
+Anwchop4+BMgz+KLhzclx6E4udSrFoZwFA6DkdqrcPIWojthSzWAvkVeLpMFNnwn
+9Gkyaz/4YGz2la1aucx+Evt+C1QRlOcV1ofqV6ShekWO7k3M1mrswDLjK5vz7P7r
+r/BcVaQUT67LouVM5kl1jvZbN8konObpWhMoNgGh7fLLcQC2Eys482t49HKOTDNp
+eCSNh/gw5lgNeGfX2BOGE7n4s0XoHRlDuRwUPZDK2dogFdf6EHhyZ8SF1rk8clNa
+a/B2gAv54O10JaTgzMZI1hx3vl0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAd
+BgNVHQ4EFgQUdeDauNpDJ6C2a1gAeQyTnw7RCpwwDgYDVR0PAQH/BAQDAgKEMA0G
+CSqGSIb3DQEBCwUAA4IBAQCfXEsVJcEmBstf/PCYXX1/I6fowrs+FYliSrND6N5X
+Kj9h2jCTJcANgIgLpd1IkSLPyTFtSBLUMDqq+oMeDdJNn1184dNBLj2yk3BtFHCA
++ykA92+Da0BUY3VRiQsVaboPcUP4Y0VaOIBzxRS7duKynI02CQcUyuVGFyo3zr16
+IhhpijWLxKYeQNAhKs009CTK38bc690JpK/l6bXXJLMq0y8+VJ25rMCv6+/nRkCc
+EvkpPfuKZCbKvRaTvMqyNuGGUXTrkj0+II6KL4x+8QfCm78hU4ZPANQhpwVzwW4m
+RJ5FQteSg/GvYRhFnMKPNF+1v6saIaN5bNi3AznaLP3U
+-----END CERTIFICATE-----".as_bytes(); // 替换为实际的密钥或从 JWKS 获取
+    // 配置校验参数
+    let mut validation = Validation::new(Algorithm::HS256); // 根据 Auth0 配置选择算法
+    // validation.set_audience(&["https://dev-gc80uo0lkw38p6fm.us.auth0.com/api/v2/"]);
+    validation.set_issuer(&[format!("https://{}/", auth0_domain)]);
+    // 解码并校验 token
+    match decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret),
+        &validation,
+    ) {
+        Ok(token_data) => {
+            // token 有效，返回成功响应
+            Ok(HttpResponse::Ok().json(format!(
+                "Token validated! User: {}",
+                token_data.claims.sub
+            )))
         }
-        None => HttpResponse::NotFound().body("No verification code found for this email"),
+        Err(err) => {
+            // token 无效，返回错误
+            Ok(HttpResponse::Unauthorized().body(format!("Invalid token: {}", err)))
+        }
     }
 }
-// 处理发送验证码请求
-#[post("/send_code")]
-pub async  fn send_code_handler(body: web::Json<SendCodeRequest>, data: web::Data<AppState>) -> impl Responder {
-    let email = body.email.clone();
-    
-    // 简单验证邮箱格式
-    if !email.contains('@') {
-        return HttpResponse::BadRequest().body("Invalid email format");
-    }
 
-    let code = generate_code();
-    let timestamp = current_timestamp();
-    
-    // 存储验证码
-    data.codes
-        .write()
-        .unwrap()
-        .insert(email.clone(), (code.clone(), timestamp));
 
-    // 模拟发送邮件
-    send_verification_code(&email, &code).await;
-
-    HttpResponse::Ok().body("Verification code sent")
-}
 
 // 处理Auth0 OAuth2.0回调，通过code获取token
 #[post("/auth/callback")]
@@ -330,6 +330,7 @@ pub async fn auth0_callback(
             if response.status().is_success() {
                 match response.json::<Auth0TokenResponse>().await {
                     Ok(token_response) => {
+                        println!("{:?}",token_response);
                         // 使用access_token获取用户信息
                         let client = reqwest::Client::new();
                         let user_info = client
@@ -346,8 +347,24 @@ pub async fn auth0_callback(
                                             // 获取email并添加到响应中
                                             let email = user_data["email"].as_str().unwrap_or("");
                                             let mut response = token_response;
-                                            response.email = Some(email.to_string());
-                                            HttpResponse::Ok().json(response)
+                                            // response.email = Some(email.to_string());
+
+                                            // 使用email生成JWT
+                                            let claims = Claims {
+                                                sub: email.to_string(),
+                                                exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
+                                            };
+                                            
+                                            let token = encode(
+                                                &Header::default(),
+                                                &claims,
+                                                &EncodingKey::from_secret("secret".as_ref()),
+                                            ).unwrap();
+                                            
+                                            let login_response = LoginResponse{email:email.clone().into(),token:token};
+
+                                            // response.id_token = token;
+                                            HttpResponse::Ok().json(login_response)
                                         }
                                         Err(_) => HttpResponse::InternalServerError().body("Failed to parse user info")
                                     }
@@ -380,16 +397,21 @@ struct Auth0CodeRequest {
 }
 
 // Auth0 token响应结构体
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize,Debug)]
 struct Auth0TokenResponse {
     access_token: String,
     id_token: String,  // Auth0特有的id_token
     token_type: String,
     expires_in: u64,
     refresh_token: Option<String>,
-    email: Option<String>,
     scope: String,
 }
+#[derive(Serialize, Deserialize,Debug)]
+struct LoginResponse{
+    email:String,
+    token:String
+}
+
 
 // Auth0错误响应结构体
 #[derive(Serialize, Deserialize)]

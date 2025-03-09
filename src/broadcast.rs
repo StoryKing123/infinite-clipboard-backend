@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration, collections::HashMap};
 
-use actix_web::rt::time::interval;
+use actix_web::{rt::time::interval, Error};
 use actix_web_lab::{
     sse::{self, Sse},
     util::InfallibleStream,
@@ -82,7 +82,7 @@ impl Broadcaster {
         // }
     }
 
-    pub async fn new_client(&self, room_id: String, client_id: String) -> Sse<InfallibleStream<ReceiverStream<sse::Event>>> {
+    pub async fn new_client(&self, room_id: String, client_id: String) -> Result< Sse<InfallibleStream<ReceiverStream<sse::Event>>> ,Error>{
         let (tx, rx) = mpsc::channel(100);
 
         let mut inner = self.inner.lock();
@@ -103,7 +103,7 @@ impl Broadcaster {
 
 
 
-        Sse::from_infallible_receiver(rx)
+        Ok(Sse::from_infallible_receiver(rx))
     }
 
     // async fn remove_client(&self, room_id: &str, client_id: &str) {
